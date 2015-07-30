@@ -1,0 +1,9 @@
+#!/bin/sh
+
+cat << EOF
+---
+addons:
+    heroku-postgresql:hobby-dev
+default_process_types:
+    web: buildout -c heroku.cfg; plone console
+EOF

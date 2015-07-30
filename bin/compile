@@ -1,0 +1,103 @@
+#!/bin/sh
+#
+#          $$$$                                                                    
+#      $$$$$$$$$$$$                                                                
+#    $$$$        $$$$    $$$$$$$$     $$                                      
+#   $$$   $$$$     $$$   $$$$$$$$$$   $$                                      
+#  $$$   $$$$$      $$$  $$$     $$$  $$                                      
+#  $$      $$        $$  $$$     $$$  $$    $$$$$$$   $$$$$$$$     $$$$$      
+#  $$         $$$$   $$  $$$    $$$   $$    $$$   $$  $$$   $$$  $$$   $$$    
+#  $$         $$$$   $$  $$$$$$$$$    $$    $$    $$  $$$    $$  $$     $$    
+#  $$      $$        $$  $$$          $$    $$    $$  $$$    $$  $$$$$$$$$    
+#  $$$   $$$$$      $$$  $$$          $$    $$    $$  $$$    $$  $$           
+#   $$$   $$$$     $$$   $$$          $$$$  $$$$$$$$  $$$    $$   $$$$$$$$    
+#    $$$$        $$$$    $$$           $$$    $$$$    $$$    $$     $$$$      
+#      $$$$$$$$$$$$                                                            
+#          $$$$                                                                
+#
+# ASCII Plone logo courtesy of Six Feet Up (http://sixfeetup.com)
+
+# Match the Heroku push style when displaying output
+# https://devcenter.heroku.com/articles/buildpack-api#bin-compile-example
+indent() {
+  sed -u 's/^/       /'
+}
+
+# Assign command line arguments to variables
+# https://devcenter.heroku.com/articles/buildpack-api#bin-compile-usage
+
+BUILD_DIR=$1
+CACHE_DIR=$2
+ENV_DIR=$3
+
+# Configure user site directory
+# https://docs.python.org/2/using/cmdline.html#envvar-PYTHONUSERBASE
+
+echo "-----> Installing setuptools, pip, buildout."
+
+export PYTHONUSERBASE=$CACHE_DIR/python
+mkdir -p $PYTHONUSERBASE
+
+# Install setuptools
+# https://bitbucket.org/pypa/setuptools#rst-header-unix-wget
+
+wget https://bootstrap.pypa.io/ez_setup.py -O - | python - --user | indent
+
+# Install pip
+# https://pip.pypa.io/en/latest/installing.html#installation
+
+wget https://bootstrap.pypa.io/get-pip.py -O - | python - --user | indent
+
+# Install buildout
+# https://github.com/buildout/buildout#installation
+
+$PYTHONUSERBASE/bin/pip install --user zc.buildout | indent
+
+echo "-----> Installing plone cache."
+
+# Install plone
+# https://github.com/plock/pins#plock-pins
+
+mkdir -p $CACHE_DIR/plone
+cat << EOF > $CACHE_DIR/plone/.cache.cfg
+[buildout]
+extends = 
+    https://raw.githubusercontent.com/plock/pins/master/plone-5-0
+    https://raw.githubusercontent.com/plock/pins/master/relstorage
+EOF
+$PYTHONUSERBASE/bin/buildout -c $CACHE_DIR/plone/.cache.cfg | indent
+
+# Copy cache directory contents to build directory
+# https://devcenter.heroku.com/articles/buildpack-api#caching
+
+mkdir -p $BUILD_DIR/.python
+cp -pr $PYTHONUSERBASE/* $BUILD_DIR/.python/ | indent
+cp -pr $CACHE_DIR/plone/* $BUILD_DIR/ | indent
+
+# Configure environment variables
+# https://devcenter.heroku.com/articles/profiled
+
+mkdir $BUILD_DIR/.profile.d/
+cat << EOF > $BUILD_DIR/.profile.d/env.sh
+PATH=$PATH:$HOME/bin:$HOME/.python/bin
+export PYTHONUSERBASE=$HOME/.python
+EOF
+
+# Export the contents of the ENV_DIR into the environment
+# https://devcenter.heroku.com/articles/buildpack-api#bin-compile-summary
+
+whitelist_regex=${2:-''}
+blacklist_regex=${3:-'^(PATH|GIT_DIR|CPATH|CPPATH|LD_PRELOAD|LIBRARY_PATH)$'}
+if [ -d "$ENV_DIR" ]; then
+  for e in $(ls $ENV_DIR); do
+    echo "$e" | grep -E "$whitelist_regex" | grep -qvE "$blacklist_regex" &&
+    export "$e=$(cat $ENV_DIR/$e)"
+    :
+  done
+fi | indent
+
+echo "-----> Installing application."
+
+# Install user packages
+
+$PYTHONUSERBASE/bin/buildout -c $BUILD_DIR/buildout.cfg | indent

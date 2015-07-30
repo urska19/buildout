@@ -1,0 +1,10 @@
+#!/bin/sh
+
+BUILD_DIR=$1
+
+if [ -f $BUILD_DIR/buildout.cfg ] && [ -f $BUILD_DIR/heroku.cfg ]; then
+  echo "Plock"
+  exit 0
+else
+  exit 1
+fi
